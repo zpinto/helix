@@ -34,8 +34,8 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 
 import org.apache.helix.HelixManager;
-import org.apache.helix.zookeeper.datamodel.ZNRecord;
 import org.apache.helix.controller.dataproviders.ResourceControllerDataProvider;
+import org.apache.helix.zookeeper.datamodel.ZNRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -840,6 +840,7 @@ public class AutoRebalanceStrategy implements RebalanceStrategy<ResourceControll
       if (c2 == null) {
         c2 = 0;
       }
+      // TODO: Need to use logicalID instead of physicalID
       return c1 < c2 ? 1 : (c1 > c2 ? -1 : o1.toString().compareTo(o2.toString()));
     }
   }

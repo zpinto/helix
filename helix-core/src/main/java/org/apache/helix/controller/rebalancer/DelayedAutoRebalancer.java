@@ -112,10 +112,15 @@ public class DelayedAutoRebalancer extends AbstractRebalancer<ResourceController
     Set<String> activeNodes = liveEnabledNodes;
     if (delayRebalanceEnabled) {
       long delay = DelayedRebalanceUtil.getRebalanceDelay(currentIdealState, clusterConfig);
-      activeNodes = DelayedRebalanceUtil
-          .getActiveNodes(allNodes, currentIdealState, liveEnabledNodes,
+      activeNodes =
+          DelayedRebalanceUtil.getActiveNodes(allNodes, currentIdealState, liveEnabledNodes,
               clusterData.getInstanceOfflineTimeMap(), clusterData.getLiveInstances().keySet(),
               clusterData.getInstanceConfigMap(), delay, clusterConfig);
+
+      // TODO: Remove SWAP_IN nodes so they do not get added to the preference list until they are ready.
+      // The assumption is that a SWAP_IN node will have a corresponding SWAP_OUT node in the cluster.
+      // If a SWAP_IN node has all the partitions from the SWAP_OUT node assigned to it and in a good state, it is ready.
+      // When it is ready, it will be pass through the filter and the SWAP_OUT node will no longer.
 
       Set<String> offlineOrDisabledInstances = new HashSet<>(activeNodes);
       offlineOrDisabledInstances.removeAll(liveEnabledNodes);
@@ -172,12 +177,13 @@ public class DelayedAutoRebalancer extends AbstractRebalancer<ResourceController
           ResourceConfig.mergeIdealStateWithResourceConfig(resourceConfig, currentIdealState),
           currentIdealState, replicaCount);
 
-      ZNRecord newActiveMapping = _rebalanceStrategy
-          .computePartitionAssignment(allNodeList, activeNodeList, currentMapping, clusterData);
+      ZNRecord newActiveMapping =
+          _rebalanceStrategy.computePartitionAssignment(allNodeList, activeNodeList, currentMapping,
+              clusterData);
       finalMapping = getFinalDelayedMapping(currentIdealState, newIdealMapping, newActiveMapping,
           liveEnabledNodes, replicaCount, minActiveReplicas);
     }
-
+    
     finalMapping.getListFields().putAll(userDefinedPreferenceList);
 
     LOG.debug("currentMapping: {}", currentMapping);
@@ -307,15 +313,20 @@ public class DelayedAutoRebalancer extends AbstractRebalancer<ResourceController
     // Instances not in preference list but still have active replica, retain to avoid zero replica during movement
     List<String> currentInstances = new ArrayList<>(currentStateMap.keySet());
     Collections.sort(currentInstances);
-    Map<String, String> pendingStates =
-        new HashMap<>(currentStateOutput.getPendingStateMap(idealState.getResourceName(), partition));
+    Map<String, String> pendingStates = new HashMap<>(
+        currentStateOutput.getPendingStateMap(idealState.getResourceName(), partition));
     for (String instance : pendingStates.keySet()) {
+      // If instance has pending state but is not in current state map, add it to current state map
+      // and to the currentInstances.
       if (!currentStateMap.containsKey(instance)) {
         currentStateMap.put(instance, stateModelDef.getInitialState());
         currentInstances.add(instance);
       }
     }
 
+    // Mark any instances without a state to be dropped.
+    // TODO: Are there any cases where a node from currentStateMap and pendingStates will not
+    // have a state?
     Set<String> instancesToDrop = new HashSet<>();
     Iterator<String> it = currentInstances.iterator();
     while (it.hasNext()) {
@@ -323,13 +334,10 @@ public class DelayedAutoRebalancer extends AbstractRebalancer<ResourceController
       String state = currentStateMap.get(instance);
       if (state == null) {
         it.remove();
-        instancesToDrop.add(instance); // These instances should be set to DROPPED after we get bestPossibleStateMap;
+        // These instances should be set to DROPPED after we get bestPossibleStateMap;
+        instancesToDrop.add(instance);
       }
     }
-
-    // Sort the instancesToMove by their current partition state.
-    // Reason: because the states are assigned to instances in the order appeared in preferenceList, if we have
-    // [node1:Slave, node2:Master], we want to keep it that way, instead of assigning Master to node1.
 
     if (preferenceList == null) {
       preferenceList = Collections.emptyList();
@@ -341,22 +349,27 @@ public class DelayedAutoRebalancer extends AbstractRebalancer<ResourceController
     // replicas
     int numReplicas = preferenceList.size();
     List<String> instanceToAdd = new ArrayList<>(preferenceList);
+    // Remove all the current instances from the instancesToAdd, so only the new instances remain.
     instanceToAdd.removeAll(currentInstances);
     List<String> combinedPreferenceList = new ArrayList<>();
 
-    if (currentInstances.size() <= numReplicas
-        && numReplicas + numExtraReplicas - currentInstances.size() > 0) {
+    // If currentInstances are less than configured number of replicas plus configured number of extra replicas,
+    // add the as many new instances as possible without exceeding the configured number of replicas plus configured
+    // number of extra replicas.
+    if (currentInstances.size() < numReplicas + numExtraReplicas) {
       int subListSize = numReplicas + numExtraReplicas - currentInstances.size();
-      combinedPreferenceList.addAll(instanceToAdd
-          .subList(0, Math.min(subListSize, instanceToAdd.size())));
+      combinedPreferenceList.addAll(
+          instanceToAdd.subList(0, Math.min(subListSize, instanceToAdd.size())));
     }
 
-    // Make all initial state instance not in preference list to be dropped.
-    Map<String, String> currentMapWithPreferenceList = new HashMap<>(currentStateMap);
-    currentMapWithPreferenceList.keySet().retainAll(preferenceList);
-
+    // Currently, there are only the max new instances to add in combinedPreferenceList. Add the current instances back.
     combinedPreferenceList.addAll(currentInstances);
-    combinedPreferenceList.sort(new PreferenceListNodeComparator(currentStateMap, stateModelDef, preferenceList));
+
+    // Sort the instancesToMove by their current partition state.
+    // Reason: because the states are assigned to instances in the order appeared in preferenceList, if we have
+    // [node1:Slave, node2:Master], we want to keep it that way, instead of assigning Master to node1.
+    combinedPreferenceList.sort(
+        new PreferenceListNodeComparator(currentStateMap, stateModelDef, preferenceList));
 
     // if preference list is not empty, and we do have new intanceToAdd, we
     // should check if it has capacity to hold the partition.
@@ -370,13 +383,20 @@ public class DelayedAutoRebalancer extends AbstractRebalancer<ResourceController
             // if instanceToAdd instance has no capacity to hold the partition, we should
             // remove it from combinedPreferenceList
             LOG.info("Instance: {} has no capacity to hold resource: {}, partition: {}, removing "
-                + "it from combinedPreferenceList.", instance, idealState.getResourceName(),
+                    + "it from combinedPreferenceList.", instance, idealState.getResourceName(),
                 partition.getPartitionName());
             combinedPreferenceList.remove(instance);
           }
         }
       }
     }
+
+    // TODO: Add matching SWAP_IN node to preference list, do not worry about the capacity because SWAP_IN will be an offline mirror
+    // until all its replicas are in a stable state.
+    // 1. If the one of the instances is in SWAP_OUT state, get the logicalId
+    // 2. Get the host with the matching logicalId in the SWAP_IN state
+    // 3. Add the SWAP_IN instance to the combinedPreferenceList
+    // 4. Create map of SWAP_IN instances to not drop.
 
     // Assign states to instances with the combined preference list.
     Map<String, String> bestPossibleStateMap =
@@ -387,12 +407,18 @@ public class DelayedAutoRebalancer extends AbstractRebalancer<ResourceController
       bestPossibleStateMap.put(instance, HelixDefinedState.DROPPED.name());
     }
 
-    // If the load-balance finishes (all replica are migrated to new instances),
+    // Make all initial state instance not in preference list to be dropped.
+    Map<String, String> currentMapWithPreferenceList = new HashMap<>(currentStateMap);
+    currentMapWithPreferenceList.keySet().retainAll(preferenceList);
+    // If none of the instances in the currentMapWithPreferenceList have partition in ERROR state
+    // and the load-balance finishes (all replica are migrated to new instances),
     // we should drop all partitions from previous assigned instances.
-    if (!currentMapWithPreferenceList.values().contains(HelixDefinedState.ERROR.name())
+    if (!currentMapWithPreferenceList.containsValue(HelixDefinedState.ERROR.name())
         && bestPossibleStateMap.size() > numReplicas && readyToDrop(currentStateMap,
         bestPossibleStateMap, preferenceList, combinedPreferenceList)) {
       for (int i = 0; i < combinedPreferenceList.size() - numReplicas; i++) {
+        // TODO: Make sure to not drop the SWAP_IN instances. Once swap is complete,
+        //  SWAP_OUT will not be in preference list anymore and this will drop those replicas.
         String instanceToDrop = combinedPreferenceList.get(combinedPreferenceList.size() - i - 1);
         bestPossibleStateMap.put(instanceToDrop, HelixDefinedState.DROPPED.name());
       }

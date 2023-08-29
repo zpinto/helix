@@ -32,7 +32,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
 import org.apache.helix.HelixException;
-import org.apache.helix.zookeeper.datamodel.ZNRecord;
 import org.apache.helix.controller.LogUtil;
 import org.apache.helix.controller.dataproviders.ResourceControllerDataProvider;
 import org.apache.helix.controller.rebalancer.strategy.crushMapping.CardDealingAdjustmentAlgorithmV2;
@@ -41,6 +40,7 @@ import org.apache.helix.controller.rebalancer.topology.InstanceNode;
 import org.apache.helix.controller.rebalancer.topology.Node;
 import org.apache.helix.controller.rebalancer.topology.Topology;
 import org.apache.helix.model.InstanceConfig;
+import org.apache.helix.zookeeper.datamodel.ZNRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -115,6 +115,7 @@ public abstract class AbstractEvenDistributionRebalanceStrategy
     // Try to re-assign if the original map is not empty
     if (!origPartitionMap.isEmpty()) {
       Map<String, List<Node>> finalPartitionMap = null;
+      // TODO: Use LogicalID when creating the topology tree
       Topology allNodeTopo =
               new Topology(allNodes, allNodes, clusterData.getInstanceConfigMap(), clusterData.getClusterConfig());
       // Transform current assignment to instance->partitions map, and get total partitions
@@ -127,6 +128,7 @@ public abstract class AbstractEvenDistributionRebalanceStrategy
         finalPartitionMap = shufflePreferenceList(nodeToPartitionMap);
         if (!liveNodes.containsAll(allNodes)) {
           try {
+            // TODO: Make sure this is not dependent on InstanceName
             // Round 4: Re-mapping the partitions on non-live nodes using consistent hashing for reducing movement.
             ConsistentHashingAdjustmentAlgorithm hashPlacement =
                 new ConsistentHashingAdjustmentAlgorithm(allNodeTopo, liveNodes);
@@ -222,6 +224,7 @@ public abstract class AbstractEvenDistributionRebalanceStrategy
           int o2Score = nodeScores.get(o2);
           if (o1Score == o2Score) {
             return new Integer((partition + o1.getName()).hashCode())
+                // TODO: Ensure this will work with node swap
                 .compareTo((partition + o2.getName()).hashCode());
           } else {
             return o1Score - o2Score;

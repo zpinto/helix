@@ -148,6 +148,7 @@ class ConstraintBasedAlgorithm implements RebalanceAlgorithm {
           if (scoreCompareResult == 0) {
             // If the evaluation scores of 2 nodes are the same, the algorithm assigns the replica
             // to the idle node first.
+            // TODO: Need to use logicalId for tie breakers here.
             String instanceName1 = nodeEntry1.getKey().getInstanceName();
             String instanceName2 = nodeEntry2.getKey().getInstanceName();
             int idleScore1 = busyInstances.contains(instanceName1) ? 0 : 1;
@@ -193,6 +194,7 @@ class ConstraintBasedAlgorithm implements RebalanceAlgorithm {
           .containsKey(replica.getResourceName());
       _isInBaselineAssignment =
           clusterModel.getContext().getBaselineAssignment().containsKey(replica.getResourceName());
+      // TODO: This will cause issues for node swap
       _replicaHash = Objects.hash(replica.toString(), clusterModel.getAssignableNodes().keySet());
       computeScore(overallClusterRemainingCapacityMap);
     }

@@ -205,6 +205,7 @@ public class Node implements Comparable<Node> {
 
   @Override
   public int compareTo(Node o) {
+    // TODO: This is a good thing, as it means that instances leaf node is used for topology placement.
     return _name.compareTo(o.getName());
   }
 }

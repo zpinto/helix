@@ -361,13 +361,14 @@ public class AssignableNode implements Comparable<AssignableNode> {
     return instanceCapacity;
   }
 
-  @Override
+  @Override // TODO: This should be logicalId
   public int hashCode() {
     return _instanceName.hashCode();
   }
 
   @Override
   public int compareTo(AssignableNode o) {
+    // TODO: This should be using logicalId
     return _instanceName.compareTo(o.getInstanceName());
   }
 

@@ -191,6 +191,7 @@ public class CardDealingAdjustmentAlgorithmV2 {
                 }
               }
               return new Integer((node1.getName() + randomSeed).hashCode())
+                  // TODO: Fix this to use logicalID instead of physicalID
                   .compareTo((node2.getName() + randomSeed).hashCode());
             } else {
               return node1Load - node2Load;

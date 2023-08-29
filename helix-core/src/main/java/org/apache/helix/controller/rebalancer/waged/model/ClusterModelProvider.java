@@ -532,6 +532,7 @@ public class ClusterModelProvider {
       Map<String, InstanceConfig> instanceConfigMap, Set<String> activeInstances) {
     return activeInstances.parallelStream()
         .filter(instanceConfigMap::containsKey).map(
+            // TODO: We need to use logicalId when creating the AssignableNode
             instanceName -> new AssignableNode(clusterConfig, instanceConfigMap.get(instanceName),
                 instanceName)).collect(Collectors.toSet());
   }

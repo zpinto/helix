@@ -300,17 +300,24 @@ public class WagedRebalancer implements StatefulRebalancer<ResourceControllerDat
       ResourceControllerDataProvider clusterData, Map<String, Resource> resourceMap,
       final CurrentStateOutput currentStateOutput, RebalanceAlgorithm algorithm)
       throws HelixRebalanceException {
-    Set<String> activeNodes = DelayedRebalanceUtil
-        .getActiveNodes(clusterData.getAllInstances(), clusterData.getEnabledLiveInstances(),
-            clusterData.getInstanceOfflineTimeMap(), clusterData.getLiveInstances().keySet(),
-            clusterData.getInstanceConfigMap(), clusterData.getClusterConfig());
+    Set<String> activeNodes = DelayedRebalanceUtil.getActiveNodes(clusterData.getAllInstances(),
+        clusterData.getEnabledLiveInstances(), clusterData.getInstanceOfflineTimeMap(),
+        clusterData.getLiveInstances().keySet(), clusterData.getInstanceConfigMap(),
+        clusterData.getClusterConfig());
+
+    // TODO: Remove SWAP_IN nodes so they do not get added to the preference list until they are ready.
+    // The assumption is that a SWAP_IN node will have a corresponding SWAP_OUT node in the cluster.
+    // If a SWAP_IN node has all the partitions from the SWAP_OUT node assigned to it and in a good state, it is ready.
+    // When it is ready, it will be pass through the filter and the SWAP_OUT node will no longer.
 
     // Schedule (or unschedule) delayed rebalance according to the delayed rebalance config.
     delayedRebalanceSchedule(clusterData, activeNodes, resourceMap.keySet());
 
     Map<String, ResourceAssignment> newBestPossibleAssignment =
-        computeBestPossibleAssignment(clusterData, resourceMap, activeNodes, currentStateOutput, algorithm);
-    Map<String, IdealState> newIdealStates = convertResourceAssignment(clusterData, newBestPossibleAssignment);
+        computeBestPossibleAssignment(clusterData, resourceMap, activeNodes, currentStateOutput,
+            algorithm);
+    Map<String, IdealState> newIdealStates =
+        convertResourceAssignment(clusterData, newBestPossibleAssignment);
 
     // Replace the assignment if user-defined preference list is configured.
     // Note the user-defined list is intentionally applied to the final mapping after calculation.
@@ -491,20 +498,26 @@ public class WagedRebalancer implements StatefulRebalancer<ResourceControllerDat
     Map<String, ResourceAssignment> assignmentWithDelayedRebalanceAdjust = newAssignment;
     if (_partialRebalanceRunner.isAsyncPartialRebalanceEnabled()) {
       assignmentWithDelayedRebalanceAdjust =
-          handleDelayedRebalanceMinActiveReplica(clusterData, resourceMap, activeNodes, newAssignment, algorithm);
+          handleDelayedRebalanceMinActiveReplica(clusterData, resourceMap, activeNodes,
+              newAssignment, algorithm);
     }
+
+    // TODO: Add the SWAPPING_OUT node back to the preference list if the SWAPPING_IN node does not have all replicas bootstrapped yet
 
     _emergencyRebalanceLatency.endMeasuringLatency();
     LOG.info("Finish emergency rebalance");
 
-    _partialRebalanceRunner.partialRebalance(clusterData, resourceMap, activeNodes, currentStateOutput, algorithm);
+    _partialRebalanceRunner.partialRebalance(clusterData, resourceMap, activeNodes,
+        currentStateOutput, algorithm);
     if (!_partialRebalanceRunner.isAsyncPartialRebalanceEnabled()) {
-      newAssignment = _assignmentManager.getBestPossibleAssignment(_assignmentMetadataStore, currentStateOutput,
-          resourceMap.keySet());
+      newAssignment =
+          _assignmentManager.getBestPossibleAssignment(_assignmentMetadataStore, currentStateOutput,
+              resourceMap.keySet());
       persistBestPossibleAssignment(newAssignment);
       // delayed rebalance handling result is temporary, shouldn't be persisted
       assignmentWithDelayedRebalanceAdjust =
-          handleDelayedRebalanceMinActiveReplica(clusterData, resourceMap, activeNodes, newAssignment, algorithm);
+          handleDelayedRebalanceMinActiveReplica(clusterData, resourceMap, activeNodes,
+              newAssignment, algorithm);
     }
 
     return assignmentWithDelayedRebalanceAdjust;

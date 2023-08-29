@@ -56,6 +56,7 @@ public class InstanceNode extends Node {
     return super.equals(that) && _instanceName.equals(that.getInstanceName());
   }
 
+  // TODO: This is a good thing for placement
   /**
    * Do not override compareTo & hashCode. This are used to determine node position in the topology.
    * Instance name should not affect the topology location in anyway.

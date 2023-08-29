@@ -354,7 +354,8 @@ public abstract class AbstractRebalancer<T extends BaseControllerDataProvider> i
       Map<String, String> currentStateMap, Set<String> liveInstances, Set<String> disabledInstancesForPartition) {
     Map<String, String> bestPossibleStateMap = new HashMap<>();
 
-    // (1) Instances that have current state but not in preference list, drop, no matter it's disabled or not.
+    // TODO: We do not want to do this for EVACUATING or SWAPPING_OUT until the new replica is in good state.
+    // (1) Instances that have current state but not in preference list, drop, no matter it'sdisabled or not.
     for (String instance : currentStateMap.keySet()) {
       if (!preferenceList.contains(instance)) {
         bestPossibleStateMap.put(instance, HelixDefinedState.DROPPED.name());

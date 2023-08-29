@@ -34,6 +34,7 @@ import org.apache.helix.controller.dataproviders.ResourceControllerDataProvider;
 import org.apache.helix.controller.rebalancer.waged.model.AssignableReplica;
 import org.apache.helix.controller.rebalancer.waged.model.ClusterModelProvider;
 import org.apache.helix.model.ClusterConfig;
+import org.apache.helix.model.ClusterTopologyConfig;
 import org.apache.helix.model.IdealState;
 import org.apache.helix.model.InstanceConfig;
 import org.apache.helix.model.Partition;
@@ -83,28 +84,32 @@ public class DelayedRebalanceUtil {
   }
 
   /**
-   * @return all active nodes (live nodes not marked as evacuate plus offline-yet-active nodes)
+   * @return all active nodes (live nodes plus offline-yet-active nodes not marked as
+   * evacuate or swapping out iff swapping in node exists)
    * while considering cluster delay rebalance configurations.
    */
   public static Set<String> getActiveNodes(Set<String> allNodes, Set<String> liveEnabledNodes,
       Map<String, Long> instanceOfflineTimeMap, Set<String> liveNodes,
       Map<String, InstanceConfig> instanceConfigMap, ClusterConfig clusterConfig) {
     if (!isDelayRebalanceEnabled(clusterConfig)) {
-      return filterOutEvacuatingInstances(instanceConfigMap, liveEnabledNodes);
+      return filterOutInactiveSwappingNodes(instanceConfigMap,
+          filterOutEvacuatingInstances(instanceConfigMap, liveEnabledNodes), clusterConfig);
     }
     return getActiveNodes(allNodes, liveEnabledNodes, instanceOfflineTimeMap, liveNodes,
         instanceConfigMap, clusterConfig.getRebalanceDelayTime(), clusterConfig);
   }
 
   /**
-   * @return all active nodes (live nodes not marked as evacuate plus offline-yet-active nodes)
+   * @return all active nodes (live nodes plus offline-yet-active nodes not marked as
+   *    * evacuate or swapping out iff swapping in node exists)
    * while considering cluster delay rebalance configurations.
    */
   public static Set<String> getActiveNodes(Set<String> allNodes, IdealState idealState,
       Set<String> liveEnabledNodes, Map<String, Long> instanceOfflineTimeMap, Set<String> liveNodes,
       Map<String, InstanceConfig> instanceConfigMap, long delay, ClusterConfig clusterConfig) {
     if (!isDelayRebalanceEnabled(idealState, clusterConfig)) {
-      return filterOutEvacuatingInstances(instanceConfigMap, liveEnabledNodes);
+      return filterOutInactiveSwappingNodes(instanceConfigMap,
+          filterOutEvacuatingInstances(instanceConfigMap, liveEnabledNodes), clusterConfig);
     }
     return getActiveNodes(allNodes, liveEnabledNodes, instanceOfflineTimeMap, liveNodes,
         instanceConfigMap, delay, clusterConfig);
@@ -113,7 +118,8 @@ public class DelayedRebalanceUtil {
   private static Set<String> getActiveNodes(Set<String> allNodes, Set<String> liveEnabledNodes,
       Map<String, Long> instanceOfflineTimeMap, Set<String> liveNodes, Map<String, InstanceConfig> instanceConfigMap,
       long delay, ClusterConfig clusterConfig) {
-    Set<String> activeNodes = filterOutEvacuatingInstances(instanceConfigMap, liveEnabledNodes);
+    Set<String> activeNodes = filterOutInactiveSwappingNodes(instanceConfigMap,
+        filterOutEvacuatingInstances(instanceConfigMap, liveEnabledNodes), clusterConfig);
     Set<String> offlineOrDisabledInstances = new HashSet<>(allNodes);
     offlineOrDisabledInstances.removeAll(liveEnabledNodes);
     long currentTime = System.currentTimeMillis();
@@ -121,20 +127,42 @@ public class DelayedRebalanceUtil {
       long inactiveTime = getInactiveTime(ins, liveNodes, instanceOfflineTimeMap.get(ins), delay,
           instanceConfigMap.get(ins), clusterConfig);
       InstanceConfig instanceConfig = instanceConfigMap.get(ins);
-      if (inactiveTime > currentTime && instanceConfig != null && instanceConfig
-          .isDelayRebalanceEnabled()) {
+      if (inactiveTime > currentTime && instanceConfig != null
+          && instanceConfig.isDelayRebalanceEnabled()) {
         activeNodes.add(ins);
       }
     }
     return activeNodes;
   }
 
-  private static Set<String> filterOutEvacuatingInstances(Map<String, InstanceConfig> instanceConfigMap,
-      Set<String> nodes) {
-    return  nodes.stream()
-        .filter(instance -> !instanceConfigMap.get(instance).getInstanceOperation().equals(
-            InstanceConstants.InstanceOperation.EVACUATE.name()))
-        .collect(Collectors.toSet());
+  private static Set<String> filterOutEvacuatingInstances(
+      Map<String, InstanceConfig> instanceConfigMap, Set<String> nodes) {
+    return nodes.stream().filter(instance -> !instanceConfigMap.get(instance).getInstanceOperation()
+        .equals(InstanceConstants.InstanceOperation.EVACUATE.name())).collect(Collectors.toSet());
+  }
+
+  private static Set<String> filterOutInactiveSwappingNodes(
+      Map<String, InstanceConfig> instanceConfigMap, Set<String> nodes,
+      ClusterConfig clusterConfig) {
+    ClusterTopologyConfig clusterTopologyConfig =
+        ClusterTopologyConfig.createFromClusterConfig(clusterConfig);
+    Map<String, String> instanceForLogicalId = new HashMap<>();
+
+    nodes.forEach(instanceName -> {
+      InstanceConfig instanceConfig = instanceConfigMap.get(instanceName);
+
+      // LogicalId will be extracted from DOMAIN or default to using instanceName.
+      String logicalId = instanceConfig.getDomainAsMap()
+          .getOrDefault(clusterTopologyConfig.getEndNodeType(), instanceName);
+
+      // There should only be one active instance per logicalId. Always choose SWAP_IN node over SWAP_OUT.
+      if (!instanceForLogicalId.containsKey(logicalId) || instanceConfig.getInstanceOperation()
+          .equals(InstanceConstants.InstanceOperation.SWAP_OUT.name())) {
+        instanceForLogicalId.put(logicalId, instanceName);
+      }
+    });
+
+    return new HashSet<>(instanceForLogicalId.values());
   }
 
   /**
