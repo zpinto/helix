@@ -31,6 +31,8 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import com.google.common.base.Joiner;
@@ -577,11 +579,34 @@ public final class HelixUtil {
    * @return a list of instances sorted and flattened.
    */
   public static List<String> sortAndFlattenZoneMapping(Map<String, Set<String>> zoneMapping) {
-    return zoneMapping
-        .entrySet()
-        .stream()
-        .sorted(Map.Entry.comparingByKey())
-        .flatMap(entry -> entry.getValue().stream().sorted())
-        .collect(Collectors.toList());
+    return zoneMapping.entrySet().stream().sorted(Map.Entry.comparingByKey())
+        .flatMap(entry -> entry.getValue().stream().sorted()).collect(Collectors.toList());
+  }
+
+  /**
+   * Fill template string with values corresponding to keys in the map.
+   * @param template string template
+   * @param valueMap map of values by keys used in template
+   * @return string with values filled in
+   * @throws HelixException if key from template string is not found in map
+   */
+  public static String fillStringTemplateFromMap(String template, Map<String, String> valueMap)
+      throws HelixException {
+    Pattern pattern = Pattern.compile("\\$\\{([^}]+)\\}");
+    Matcher matcher = pattern.matcher(template);
+    StringBuilder result = new StringBuilder();
+
+    while (matcher.find()) {
+      String key = matcher.group(1);
+      String replacement = valueMap.get(key);
+      if (replacement != null) {
+        matcher.appendReplacement(result, replacement);
+      } else {
+        throw new IllegalArgumentException("Key not found in map: " + key);
+      }
+    }
+    matcher.appendTail(result);
+
+    return result.toString();
   }
 }

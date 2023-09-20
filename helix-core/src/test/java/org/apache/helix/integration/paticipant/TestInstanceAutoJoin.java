@@ -14,6 +14,7 @@ import org.apache.helix.integration.common.ZkStandAloneCMTestBase;
 import org.apache.helix.integration.manager.MockParticipantManager;
 import org.apache.helix.manager.zk.ZKHelixManager;
 import org.apache.helix.model.CloudConfig;
+import org.apache.helix.model.ClusterConfig;
 import org.apache.helix.model.ConfigScope;
 import org.apache.helix.model.HelixConfigScope;
 import org.apache.helix.model.IdealState.RebalanceMode;
@@ -213,6 +214,54 @@ public class TestInstanceAutoJoin extends ZkStandAloneCMTestBase {
           .getProperty(accessor.keyBuilder().liveInstance(instance5)) && manager.getConfigAccessor()
           .getInstanceConfig(CLUSTER_NAME, instance5).getDomainAsString()
           .equals("rack=A:123, host=" + instance5);
+    }, 2000));
+
+    autoParticipant.syncStop();
+  }
+
+  @Test(dependsOnMethods = "testAutoRegistrationCustomizedFullyQualifiedInfoProcessorPath")
+  public void testAutoRegistrationWithInstanceDomainTemplateAndCloudInstanceInformationV2()
+      throws Exception {
+    HelixManager manager = _participants[0];
+    HelixDataAccessor accessor = manager.getHelixDataAccessor();
+    String instance6 = "localhost_279703";
+
+    // Enable cluster auto join.
+    HelixConfigScope scope =
+        new HelixConfigScopeBuilder(HelixConfigScope.ConfigScopeProperty.CLUSTER).forCluster(
+            CLUSTER_NAME).build();
+    manager.getConfigAccessor().set(scope, ZKHelixManager.ALLOW_PARTICIPANT_AUTO_JOIN, "true");
+    manager.getConfigAccessor()
+        .set(scope, ClusterConfig.ClusterConfigProperty.INSTANCE_DOMAIN_TEMPLATE.name(),
+            "mz=${MAINTENANCE_ZONE}, host=${HOSTNAME}, container=${INSTANCE_NAME}");
+
+    // Create CloudConfig object for CUSTOM cloud provider.
+    CloudConfig cloudConfig =
+        new CloudConfig.Builder().setCloudEnabled(true).setCloudProvider(CloudProvider.CUSTOMIZED)
+            .setCloudInfoProcessorPackageName("org.apache.helix.integration.paticipant")
+            .setCloudInfoProcessorName("CustomCloudInstanceInformationProcessor")
+            .setCloudInfoSources(Collections.singletonList("https://cloud.com")).build();
+
+    // Update CloudConfig to Zookeeper.
+    PropertyKey.Builder keyBuilder = accessor.keyBuilder();
+    accessor.setProperty(keyBuilder.cloudConfig(), cloudConfig);
+
+    // Create and start a new participant with default instance config.
+    InstanceConfig.Builder defaultInstanceConfig =
+        new InstanceConfig.Builder().setInstanceEnabled(false).addTag("foo");
+    MockParticipantManager autoParticipant =
+        new MockParticipantManager(ZK_ADDR, CLUSTER_NAME, instance6, 10, null,
+            new HelixManagerProperty.Builder().setDefaultInstanceConfigBuilder(
+                defaultInstanceConfig).build());
+
+    autoParticipant.syncStart();
+
+    Assert.assertTrue(TestHelper.verify(() -> {
+      // Check that live instance is added and instance config is populated with correct domain.
+      return null != manager.getHelixDataAccessor()
+          .getProperty(accessor.keyBuilder().liveInstance(instance6)) && manager.getConfigAccessor()
+          .getInstanceConfig(CLUSTER_NAME, instance6).getDomainAsString()
+          .equals("mz=0, host=localhost, container=" + instance6);
     }, 2000));
 
     autoParticipant.syncStop();

@@ -418,7 +418,6 @@ public class TestClusterConfig {
             -1), 10000L);
   }
 
-
   private void trySetInvalidAbnormalStatesResolverMap(ClusterConfig testConfig,
       Map<String, String> resolverMap) {
     try {
@@ -427,5 +426,15 @@ public class TestClusterConfig {
     } catch (IllegalArgumentException ex) {
       // expected
     }
+  }
+
+  @Test
+  public void testSetGetInstanceDomainTemplate() {
+    ClusterConfig testConfig = new ClusterConfig("testId");
+    Assert.assertNull(testConfig.getInstanceDomainTemplate());
+
+    testConfig.setInstanceDomainTemplate("rack=${CAGE}:${CABINET},host=${INSTANCE_NAME}");
+    Assert.assertEquals(testConfig.getInstanceDomainTemplate(),
+        "rack=${CAGE}:${CABINET},host=${INSTANCE_NAME}");
   }
 }

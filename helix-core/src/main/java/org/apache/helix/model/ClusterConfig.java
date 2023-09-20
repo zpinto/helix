@@ -53,11 +53,11 @@ public class ClusterConfig extends HelixProperty {
     PERSIST_BEST_POSSIBLE_ASSIGNMENT,
     PERSIST_INTERMEDIATE_ASSIGNMENT,
     TOPOLOGY, // cluster topology definition, for example, "/zone/rack/host/instance"
+    INSTANCE_DOMAIN_TEMPLATE, // used to construct an instances DOMAIN from key value pairs in INSTANCE_INFORMATION_MAP
     FAULT_ZONE_TYPE, // the type in which isolation should be applied on when Helix places the
     // replicas from same partition.
     TOPOLOGY_AWARE_ENABLED, // whether topology aware rebalance is enabled.
-    @Deprecated
-    DELAY_REBALANCE_DISABLED, // disabled the delayed rebalaning in case node goes offline.
+    @Deprecated DELAY_REBALANCE_DISABLED, // disabled the delayed rebalaning in case node goes offline.
     DELAY_REBALANCE_ENABLED, // whether the delayed rebalaning is enabled.
     DELAY_REBALANCE_TIME, // delayed time in ms that the delay time Helix should hold until
     // rebalancing.
@@ -422,6 +422,24 @@ public class ClusterConfig extends HelixProperty {
    */
   public String getTopology() {
     return _record.getSimpleField(ClusterConfigProperty.TOPOLOGY.name());
+  }
+
+  /**
+   * Set instance domain template, this is used to generate and instances DOMAIN field using
+   * the key-value pairs in INSTANCE_INFO_MAP.
+   * @param instanceDomainTemplate
+   */
+  public void setInstanceDomainTemplate(String instanceDomainTemplate) {
+    _record.setSimpleField(ClusterConfigProperty.INSTANCE_DOMAIN_TEMPLATE.name(),
+        instanceDomainTemplate);
+  }
+
+  /**
+   * Get instance domain template.
+   * @return instance domain template string
+   */
+  public String getInstanceDomainTemplate() {
+    return _record.getSimpleField(ClusterConfigProperty.INSTANCE_DOMAIN_TEMPLATE.name());
   }
 
   /**

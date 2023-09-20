@@ -43,6 +43,7 @@ import org.apache.helix.PreConnectCallback;
 import org.apache.helix.PropertyKey;
 import org.apache.helix.api.cloud.CloudInstanceInformation;
 import org.apache.helix.api.cloud.CloudInstanceInformationProcessor;
+import org.apache.helix.api.cloud.CloudInstanceInformationV2;
 import org.apache.helix.messaging.DefaultMessagingService;
 import org.apache.helix.model.CurrentState;
 import org.apache.helix.model.HelixConfigScope;
@@ -58,6 +59,7 @@ import org.apache.helix.participant.statemachine.StateModel;
 import org.apache.helix.participant.statemachine.StateModelFactory;
 import org.apache.helix.task.TaskConstants;
 import org.apache.helix.task.TaskUtil;
+import org.apache.helix.util.HelixUtil;
 import org.apache.helix.zookeeper.api.client.RealmAwareZkClient;
 import org.apache.helix.zookeeper.datamodel.ZNRecord;
 import org.apache.helix.zookeeper.datamodel.ZNRecordBucketizer;
@@ -208,25 +210,39 @@ public class ParticipantManager {
     InstanceConfig instanceConfig;
     if (!ZKUtil.isInstanceSetup(_zkclient, _clusterName, _instanceName, _instanceType)) {
       if (!autoJoin) {
-        throw new HelixException("Initial cluster structure is not set up for instance: "
-            + _instanceName + ", instanceType: " + _instanceType);
+        throw new HelixException(
+            "Initial cluster structure is not set up for instance: " + _instanceName
+                + ", instanceType: " + _instanceType);
       }
+
+      InstanceConfig.Builder instanceConfigBuilder =
+          _helixManagerProperty.getDefaultInstanceConfigBuilder();
       if (!autoRegistration) {
         LOG.info(_instanceName + " is auto-joining cluster: " + _clusterName);
-        instanceConfig =
-            _helixManagerProperty.getDefaultInstanceConfigBuilder().build(_instanceName);
+        instanceConfig = instanceConfigBuilder.build(_instanceName);
       } else {
         LOG.info(_instanceName + " is auto-registering cluster: " + _clusterName);
         CloudInstanceInformation cloudInstanceInformation = getCloudInstanceInformation();
-        String domain = cloudInstanceInformation.get(
-            CloudInstanceInformation.CloudInstanceField.FAULT_DOMAIN.name()) + _instanceName;
-        instanceConfig =
-            _helixManagerProperty.getDefaultInstanceConfigBuilder().build(_instanceName);
-        instanceConfig.setDomain(domain);
+        if (cloudInstanceInformation instanceof CloudInstanceInformationV2) {
+          CloudInstanceInformationV2 cloudInstanceInformationV2 =
+              (CloudInstanceInformationV2) cloudInstanceInformation;
+          cloudInstanceInformationV2.getAll().forEach(instanceConfigBuilder::addInstanceInfo);
+        }
+
+        instanceConfig = instanceConfigBuilder.build(_instanceName);
+        String instanceDomainTemplate =
+            _configAccessor.getClusterConfig(_clusterName).getInstanceDomainTemplate();
+        if (instanceDomainTemplate != null) {
+          instanceConfig.setDomain(HelixUtil.fillStringTemplateFromMap(instanceDomainTemplate,
+              instanceConfig.getInstanceInfoMap()));
+        } else {
+          String domain = cloudInstanceInformation.get(
+              CloudInstanceInformation.CloudInstanceField.FAULT_DOMAIN.name()) + _instanceName;
+          instanceConfig.setDomain(domain);
+        }
       }
-      instanceConfig
-          .validateTopologySettingInInstanceConfig(_configAccessor.getClusterConfig(_clusterName),
-              _instanceName);
+      instanceConfig.validateTopologySettingInInstanceConfig(
+          _configAccessor.getClusterConfig(_clusterName), _instanceName);
       _helixAdmin.addInstance(_clusterName, instanceConfig);
     } else {
       _configAccessor.getInstanceConfig(_clusterName, _instanceName)

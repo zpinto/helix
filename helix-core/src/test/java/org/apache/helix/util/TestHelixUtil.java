@@ -1,4 +1,4 @@
-package org.apache.helix.integration.paticipant;
+package org.apache.helix.util;
 
 /*
  * Licensed to the Apache Software Foundation (ASF) under one
@@ -9,7 +9,9 @@ package org.apache.helix.integration.paticipant;
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
+ *
  *     http://www.apache.org/licenses/LICENSE-2.0
+ *
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -22,29 +24,17 @@ package org.apache.helix.integration.paticipant;
 import java.util.Map;
 
 import com.google.common.collect.ImmutableMap;
-import org.apache.helix.api.cloud.CloudInstanceInformation;
-import org.apache.helix.api.cloud.CloudInstanceInformationV2;
+import org.testng.Assert;
+import org.testng.annotations.Test;
 
-/**
- * This is a custom implementation of CloudInstanceInformation. It is used to test the functionality
- * of Helix node auto-registration.
- */
-public class CustomCloudInstanceInformation implements CloudInstanceInformationV2 {
-  private final Map<String, String> _cloudInstanceInfo =
-      ImmutableMap.of(CloudInstanceInformation.CloudInstanceField.FAULT_DOMAIN.name(),
-          "rack=A:123, host=", "MAINTENANCE_ZONE", "0", "INSTANCE_NAME", "localhost_something");
-  ;
+public class TestHelixUtil {
+  @Test
+  public void testFillStringTemplateFromMap() {
+    Map<String, String> keyValuePairs =
+        ImmutableMap.of("CAGE", "H", "CABINET", "30", "INSTANCE_NAME", "foo.bar.com_1234");
 
-  public CustomCloudInstanceInformation() {
-  }
-
-  @Override
-  public String get(String key) {
-    return _cloudInstanceInfo.get(key);
-  }
-
-  @Override
-  public Map<String, String> getAll() {
-    return _cloudInstanceInfo;
+    Assert.assertEquals(
+        HelixUtil.fillStringTemplateFromMap("rack=${CAGE}:${CABINET},host=${INSTANCE_NAME}",
+            keyValuePairs), "rack=H:30,host=foo.bar.com_1234");
   }
 }
